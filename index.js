@@ -1,24 +1,48 @@
+'use strict';
 var WebSocketServer = require('ws').Server;
 var url = require('url');
 var ursa = require('ursa');
 var fs = require('fs');
+var path = require('path');
+
+var serverKeyId = process.env.HAIKU_DEVICE_ID || 'signaling_server';
+var keydir = path.join(__dirname, '.keys');
+
 var wss = new WebSocketServer({
   verifyClient: function(info, cb) {
+    console.log('verifyClient, headers: ', info.req.headers);
     var encryptedMsg = info.req.headers.encrypted;
     var hashedSig = info.req.headers.signed;
-    var deviceId = info.req.headers.devId;
-    var privkeyServer = ursa.createPrivateKey(fs.readFileSync('./serverkeys/privkey.pem'));
-    var pubkeyClient = ursa.createPublicKey(fs.readFileSync('./clientkeys/pubkey.pem'));
-    
+    var deviceId = info.req.headers.deviceid;
+
+    var privkeyServerFilename = path.join(keydir, serverKeyId + '.pem');
+    var pubkeyClientFilename = path.join(keydir, deviceId + '.pub.pem')
+    console.log('verifyClient, looking for public key at: ', pubkeyClientFilename);
+
+    var privkeyServer;
+    var pubkeyClient;
+
+    if (fs.existsSync(privkeyServerFilename)) {
+      privkeyServer = ursa.createPrivateKey( fs.readFileSync(privkeyServerFilename) );
+    } else {
+      throw new Error('Private key for server not found');
+    }
+
+    if (fs.existsSync(pubkeyClientFilename)) {
+      pubkeyClient = ursa.createPublicKey(fs.readFileSync(pubkeyClientFilename));
+    } else {
+      // TODO: just send rejection?
+      throw new Error('Public key for client: ' + deviceId + ' not found');
+    }
+
     var decrypted = privkeyServer.decrypt(encryptedMsg, 'base64', 'utf8');
     var recrypted = new Buffer(decrypted).toString('base64');
 
     if (!pubkeyClient.hashAndVerify('sha256', recrypted, hashedSig, 'base64')) {
       console.log('Signature not verified!');
       cb(false, 401, 'Unauthorized');
-
     }
-    else { 
+    else {
       console.log('Signature verified!');
       cb(true);
     }
