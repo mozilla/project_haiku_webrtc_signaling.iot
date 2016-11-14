@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "express": "^4.14.0",
+    "mkdirp": "^0.5.1",
     "ursa": "^0.9.4",
     "ws": "^1.1.1"
   }
