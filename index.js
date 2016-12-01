@@ -4,9 +4,21 @@ var url = require('url');
 var ursa = require('ursa');
 var fs = require('fs');
 var path = require('path');
+var express = require('express');
+var app = express();
 
 var serverKeyId = process.env.HAIKU_DEVICE_ID || 'signaling_server';
 var keydir = path.join(__dirname, '.keys');
+/*
+IN PROGRESS: 
+ -making public key exchange easier:
+
+app.post('https://www.signaling_server.herokuapp.com/keyEx', function(req, res) {
+  var clientPub = req.body.clientPub;
+  fs.writeFileSync(keydir, 'new-client-key.pub.pem', 'ascii');
+  res.sendFile(path.join(keydir, 'signaling_server.pub.pem'));
+})
+*/
 
 var wss = new WebSocketServer({
   verifyClient: function(info, cb) {
@@ -14,28 +26,43 @@ var wss = new WebSocketServer({
     var encryptedMsg = info.req.headers.encrypted;
     var hashedSig = info.req.headers.signed;
     var deviceId = info.req.headers.deviceid;
-
+//    var newSig = info.req.headers.newsig;
+    
     var privkeyServerFilename = path.join(keydir, serverKeyId + '.pem');
-    var pubkeyClientFilename = path.join(keydir, deviceId + '.pub.pem')
+    var pubkeyClientFilename = path.join(keydir, deviceId + '.pub.pem');
+//    var newClientFilename = path.join(keydir, 'new-client-key.pub.pem');
     console.log('verifyClient, looking for public key at: ', pubkeyClientFilename);
 
     var privkeyServer;
     var pubkeyClient;
 
     if (fs.existsSync(privkeyServerFilename)) {
-      privkeyServer = ursa.createPrivateKey( fs.readFileSync(privkeyServerFilename) );
+      privkeyServer = ursa.createPrivateKey(fs.readFileSync(privkeyServerFilename));
+      console.log('Private key created', privkeyServer)
     } else {
-      throw new Error('Private key for server not found');
+      cb(false, 409, 'Private key for server not found');
+      return;
     }
-
+ 
     if (fs.existsSync(pubkeyClientFilename)) {
       pubkeyClient = ursa.createPublicKey(fs.readFileSync(pubkeyClientFilename));
-    } else {
-      // TODO: just send rejection?
-      throw new Error('Public key for client: ' + deviceId + ' not found');
+    } 
+    else if (fs.existsSync(newClientFilename)) {
+      pubkeyClient = ursa.createPublicKey(fs.readFileSync(newClientFilename));
+    }
+    else {
+      cb(false, 409, 'Public key for client: ' + deviceId + ' not found');
+      return;
     }
 
-    var decrypted = privkeyServer.decrypt(encryptedMsg, 'base64', 'utf8');
+    if (privkeyServer.decrypt(encryptedMsg, 'base64', 'utf8')) {
+          var decrypted = privkeyServer.decrypt(encryptedMsg, 'base64', 'utf8');
+    }
+    else {
+      cb(false, 409, 'Invalid Decrypt');
+      return;
+    }
+
     var recrypted = new Buffer(decrypted).toString('base64');
 
     if (!pubkeyClient.hashAndVerify('sha256', recrypted, hashedSig, 'base64')) {
@@ -47,7 +74,7 @@ var wss = new WebSocketServer({
       cb(true);
     }
   },
-   port: 8080 });
+   port: process.env.PORT || 8080 });
 
 var clientSockets = {};
 
@@ -97,6 +124,10 @@ wss.on('connection', function connection(ws) {
       }
     });
   });
+
+//   ws.on('uncaughtException', function (err) {
+//   console.log('Caught exception: ' + err);
+// });
 
   if (Object.keys(clientSockets).length > 1) {
     getChannelHost(clientSockets).send(JSON.stringify({
