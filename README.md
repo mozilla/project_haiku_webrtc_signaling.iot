@@ -1,5 +1,8 @@
 ##Project Haiku WebRTC Signaling Server
 =====================================
+###Project Status - On Hold
+
+The current status of the project due to resource constraints is On Hold. We are archiving and keeping  [log of the work here] (https://github.com/mozilla/project_haiku.iot/wiki/Useful-Links-and-Work-Log).
 
 ###Install: 
 ```
